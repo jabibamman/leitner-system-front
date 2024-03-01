@@ -1,0 +1,19 @@
+runtime: nodejs20
+
+service: frontend
+
+env_variables:
+  VITE_APP_API_URL: 'localhost:8080'
+
+handlers:
+- url: /
+  static_files: dist/index.html
+  upload: dist/index.html
+
+- url: /(.*\.(gif|png|jpg|css|js|ico|json|txt|svg|woff|ttf|eot))$
+  static_files: dist/\1
+  upload: dist/(.*\.(gif|png|jpg|css|js|ico|json|txt|svg|woff|ttf|eot))$
+
+- url: /.*
+  static_files: dist/index.html
+  upload: dist/index.html
