@@ -26,7 +26,6 @@ export const APIService = {
   },
 
   createCard(data: CardUserData): Promise<Card> {
-    console.log(data);
     return apiClient.post('/cards', data).then(res => res.data);
   },
 

@@ -16,6 +16,9 @@ import HelloWorld from './components/HelloWorld.vue'
         <v-col>
           <v-btn color="primary" to="/card">Card</v-btn>
         </v-col>
+        <v-col>
+          <v-btn color="primary" to="/quiz">Quiz</v-btn>
+        </v-col>
       </v-row>
     </v-container>
     <div class="wrapper">

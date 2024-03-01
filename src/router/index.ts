@@ -12,8 +12,13 @@ const router = createRouter({
     },
     {
       path: '/card',
-      name: 'about',
+      name: 'card-library',
       component: CardLiBraryView
+    },
+    {
+      path: '/quiz',
+      name: 'quiz',
+      component: () => import('../views/QuizView.vue')
     }
   ]
 })
