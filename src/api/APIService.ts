@@ -20,13 +20,12 @@ export const APIService = {
       // If tags are provided, add them to the query parameters
       queryParams['tags'] = tags.join(',');
     }
-  
+
     // Make the API call with the constructed query parameters
     return apiClient.get('/cards', { params: queryParams }).then(res => res.data);
   },
 
   createCard(data: CardUserData): Promise<Card> {
-    console.log(data);
     return apiClient.post('/cards', data).then(res => res.data);
   },
 
@@ -40,4 +39,3 @@ export const APIService = {
 };
 
 export default APIService;
-
