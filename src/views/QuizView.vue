@@ -16,6 +16,20 @@
                 </v-card>
             </v-col>
         </v-row>
+        <v-dialog v-model="showStartDialog" persistent width="300">
+            <v-card>
+                <v-card-title class="text-h5">Prêt pour le Quiz ?</v-card-title>
+                <v-card-text v-if="cards.length">
+                    <p>Vous avez {{ cards.length }} cartes à réviser aujourd'hui.</p>
+                </v-card-text>
+                <v-card-actions>
+                    <v-spacer></v-spacer>
+                    <v-btn color="green" @click="startQuiz">Commencer</v-btn>
+                    <v-btn color="red" text @click="cancelQuiz">Annuler</v-btn>
+                </v-card-actions>
+            </v-card>
+        </v-dialog>
+
         <v-dialog v-model="showResultDialog" persistent width="300">
             <v-card>
                 <v-card-title class="text-h5">
@@ -48,6 +62,7 @@
 import { ref, onMounted, computed } from 'vue';
 import APIService from "@/api/APIService";
 import type { Card } from '@/api/models/Card';
+import { useRouter } from 'vue-router';
 
 export default {
     name: "QuizPage",
@@ -60,15 +75,29 @@ export default {
         const resultMessage = ref('');
         const correctAnswersCount = ref(0);
         const wrongAnswersCount = ref(0);
+        const showStartDialog = ref(true);
+        const router = useRouter();
 
         const fetchCardsForQuizz = async () => {
             try {
                 const response = await APIService.getCardsForQuizz();
                 cards.value = response;
-                currentCard.value = cards.value[currentCardIndex.value];
             } catch (error) {
                 console.error("Erreur lors de la récupération des cartes pour le quiz:", error);
             }
+        };
+
+        const startQuiz = async () => {
+            await fetchCardsForQuizz();
+            if (cards.value.length > 0) {
+                currentCard.value = cards.value[currentCardIndex.value];
+            }
+            showStartDialog.value = false;
+        };
+
+        const cancelQuiz = () => {
+            showStartDialog.value = false;
+            router.push('/card');
         };
 
         const submitAnswer = async () => {
@@ -87,6 +116,9 @@ export default {
             }
         };
 
+        onMounted(fetchCardsForQuizz);
+
+
         const nextQuestion = () => {
             if (currentCardIndex.value < cards.value.length - 1) {
                 currentCardIndex.value++;
@@ -101,9 +133,21 @@ export default {
 
         const isQuizFinished = computed(() => currentCardIndex.value === cards.value.length - 1 && !currentCard.value);
 
-        onMounted(fetchCardsForQuizz);
-
-        return { currentCard, userAnswer, submitAnswer, showResultDialog, resultMessage, nextQuestion, isQuizFinished, correctAnswersCount, wrongAnswersCount };
+        return {
+            cards,
+            currentCard,
+            userAnswer,
+            submitAnswer,
+            showResultDialog,
+            resultMessage,
+            nextQuestion,
+            isQuizFinished,
+            correctAnswersCount,
+            wrongAnswersCount,
+            showStartDialog,
+            startQuiz,
+            cancelQuiz
+        };
     },
 };
 </script>
