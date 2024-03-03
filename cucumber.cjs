@@ -24,8 +24,8 @@ After(async function () {
 });
 
 module.exports = {
-  default: `--require-module ts-node/register 
-            --require tests/e2e/**/*.steps.ts 
-            --publish-quiet 
+  default: `--require-module ts-node/register
+            --require tests/e2e/**/*.steps.ts
+            --publish-quiet
             tests/features/**/*.feature`
 };
