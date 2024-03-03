@@ -11,9 +11,13 @@
     </v-row>
     <v-row>
       <v-col cols="12" sm="6" md="4" lg="6" v-for="card in filteredCards" :key="card.id">
-        <v-card class="ma-2" @click="toggleShowAnswer(card)">
+        <v-card class="ma-2" :id="'card-' + card.id" @click="toggleShowAnswer(card)">
           <v-card-title>{{ card.question }}</v-card-title>
           <v-card-subtitle>{{ card.tag }}</v-card-subtitle>
+          <v-card-subtitle>Catégorie : {{ card.category }}</v-card-subtitle>
+          <v-card-text v-if="!card.showAnswer">
+            Cliquez pour voir la réponse
+          </v-card-text>
           <v-card-text v-if="card.showAnswer">
             Réponse : {{ card.answer }}
           </v-card-text>
@@ -24,12 +28,14 @@
       <v-card>
         <v-card-title>Créer une nouvelle carte</v-card-title>
         <v-card-text>
-          <v-text-field v-model="newCard.question" label="Question" :error-messages="errorMessages.question"></v-text-field>
-          <v-text-field v-model="newCard.tag" label="Tag"></v-text-field>
-          <v-text-field v-model="newCard.answer" label="Réponse" :error-messages="errorMessages.answer"></v-text-field>
+          <v-card-text>
+            <v-text-field v-model="newCard.question" label="Question" :error-messages="errorMessages.question" id="newCard_question"></v-text-field>
+            <v-text-field v-model="newCard.tag" label="Tag" id="newCard_tag"></v-text-field>
+            <v-text-field v-model="newCard.answer" label="Réponse" :error-messages="errorMessages.answer" id="newCard_answer"></v-text-field>
+          </v-card-text>
         </v-card-text>
         <v-card-actions>
-          <v-btn color="primary" @click="createCard">Créer</v-btn>
+          <v-btn color="primary" @click="createCard" id="create-button">Créer</v-btn>
           <v-btn color="error" @click="closeCreateModal">Annuler</v-btn>
         </v-card-actions>
       </v-card>
@@ -54,7 +60,12 @@ export default {
     const fetchCards = async () => {
       try {
         const response = await APIService.getAllCards();
-        cards.value = response.map(card => ({ ...card, showAnswer: false }));
+        cards.value = response.map(card => ({
+        ...card,
+        showAnswer: false,
+        category: card.category,
+        }));
+        cards.value.reverse();
         filteredCards.value = [...cards.value];
       } catch (error) {
         console.error("Erreur lors de la récupération des cartes:", error);
@@ -66,6 +77,7 @@ export default {
         const tags = search.value.split(',');
         const response = await APIService.getAllCards(tags.filter(tag => tag.trim() !== ""));
         cards.value = response.map(card => ({ ...card, showAnswer: false }));
+        cards.value.reverse();
         filteredCards.value = [...cards.value];
       } catch (error) {
         console.error("Erreur lors du filtrage des cartes:", error);
@@ -93,7 +105,9 @@ const createCard = async () => {
 
   try {
     const response = await APIService.createCard(newCard.value);
-    cards.value.push({ ...response, showAnswer: false });
+    const cardWithId = { ...response, id: generateUUID(), showAnswer: false };
+    cards.value.push(cardWithId);
+    cards.value.reverse();
     filteredCards.value = [...cards.value];
     newCard.value = { question: "", tag: "", answer: "" };
     closeCreateModal();
@@ -101,9 +115,17 @@ const createCard = async () => {
     console.error("Erreur lors de la création de la carte:", error);
   }
 };
-    const closeCreateModal = () => {
-      showCreateModal.value = false;
-    };
+  function generateUUID() {
+    return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
+      var r = Math.random() * 16 | 0, v = c == 'x' ? r : (r & 0x3 | 0x8);
+      return v.toString(16);
+    });
+  }
+
+
+  const closeCreateModal = () => {
+    showCreateModal.value = false;
+  };
 
     fetchCards();
 
