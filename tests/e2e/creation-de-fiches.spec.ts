@@ -24,7 +24,7 @@ test.describe('Tests spécifiques pour chaque navigateur', () => {
     test.beforeEach(async ({}, testInfo) => {
         browserName = testInfo.project.name;
     });
-        
+
     test(`Créer une nouvelle carte selon le navigateur`, async ({ page }) => {
         const question = questions[browserName];
         const answer = answers[browserName];
