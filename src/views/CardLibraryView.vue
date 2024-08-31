@@ -11,8 +11,7 @@
     </v-row>
     <v-row>
       <v-col cols="12" sm="6" md="4" lg="6" v-for="card in filteredCards" :key="card.id">
-        <v-card class="ma-2" :id="'card-' + card.id" @click="toggleShowAnswer(card)">
-          <v-card-title>{{ card.question }}</v-card-title>
+        <v-card class="ma-2" :id="'card-' + card.id" @click.prevent.right @click="toggleShowAnswer(card)" @click.right="toggleContextMenu(card)">          <v-card-title>{{ card.question }}</v-card-title>
           <v-card-subtitle>{{ card.tag }}</v-card-subtitle>
           <v-card-subtitle>Catégorie : {{ card.category }}</v-card-subtitle>
           <v-card-text v-if="!card.showAnswer">
@@ -40,20 +39,38 @@
         </v-card-actions>
       </v-card>
     </v-dialog>
+    <v-dialog v-model="showEditModal" persistent full-width>
+     <v-card>
+        <v-btn-group >
+          <v-btn color="warning">Editer la carte</v-btn>
+          <v-btn>Duppliquer la carte</v-btn>
+          <v-btn>Supprimer la carte</v-btn>
+        </v-btn-group>  
+        <v-text-field label="Question" disabled>Lorem dolor ipsum</v-text-field>
+        <v-text-field label="Tag" disabled>Dolor sit amet</v-text-field>
+        <v-text-field label="Réponse" disabled big>Sit lorem ipsum</v-text-field>
+        <v-card-actions>
+          <v-btn color="error" @click="closeEditModal">Fermer</v-btn>
+        </v-card-actions>
+     </v-card>
+
+    </v-dialog>
   </v-container>
 </template>
 
 <script lang="ts">
 import { ref } from 'vue';
 import APIService from "@/api/APIService";
+import type { Card } from "@/api/models/Card";
 
 export default {
   name: "CardLibraryView",
   setup() {
-    const cards = ref([]);
-    const filteredCards = ref([]);
+    const cards = ref<Card[]>([]);
+    const filteredCards = ref<Card[]>([]);
     const search = ref("");
     const showCreateModal = ref(false);
+    const showEditModal = ref(true);
     const newCard = ref({ question: "", tag: "", answer: "" });
     const errorMessages = ref({ question: '', tag: '', answer: '' });
 
@@ -84,8 +101,12 @@ export default {
       }
     };
 
-    const toggleShowAnswer = (card) => {
+    const toggleShowAnswer = (card : Card) => {
       card.showAnswer = !card.showAnswer;
+    };
+
+    const toggleContextMenu = (card : Card) => {
+      showEditModal.value = !showEditModal.value;
     };
 
 const createCard = async () => {
@@ -123,9 +144,14 @@ const createCard = async () => {
   }
 
 
+
   const closeCreateModal = () => {
     showCreateModal.value = false;
   };
+
+  const closeEditModal = () => {
+    showEditModal.value = !showEditModal.value;
+  }
 
     fetchCards();
 
@@ -134,11 +160,14 @@ const createCard = async () => {
       filteredCards,
       search,
       showCreateModal,
+      showEditModal,
       newCard,
       filterCards,
       toggleShowAnswer,
+      toggleContextMenu,
       createCard,
       closeCreateModal,
+      closeEditModal,
       errorMessages,
     };
   },

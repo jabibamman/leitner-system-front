@@ -1,13 +1,11 @@
 <script setup lang="ts">
 import { RouterLink, RouterView } from 'vue-router'
-import HelloWorld from './components/HelloWorld.vue'
+import Header from './components/Header.vue'
 
 </script>
 
-
 <template>
   <header>
-    <img alt="Vue logo" class="logo" src="@/assets/logo.svg" width="125" height="125" />
     <v-container>
       <v-row style="flex-direction: column;">
         <v-col>
@@ -22,7 +20,7 @@ import HelloWorld from './components/HelloWorld.vue'
       </v-row>
     </v-container>
     <div class="wrapper">
-      <HelloWorld msg="Leitner System" />
+      <Header msg="Leitner System" />
     </div>
   </header>
 

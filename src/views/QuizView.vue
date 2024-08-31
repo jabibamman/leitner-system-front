@@ -25,7 +25,7 @@
                 <v-card-actions>
                     <v-spacer></v-spacer>
                     <v-btn color="green" @click="startQuiz">Commencer</v-btn>
-                    <v-btn color="red" text @click="cancelQuiz">Annuler</v-btn>
+                    <v-btn color="red" @click="cancelQuiz">Annuler</v-btn>
                 </v-card-actions>
             </v-card>
         </v-dialog>

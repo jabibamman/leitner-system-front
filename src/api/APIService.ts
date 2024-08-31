@@ -1,5 +1,5 @@
 import axios from 'axios';
-import type { Card, CardId, CardUserData } from './models/Card'; // Note l'utilisation de "type" ici
+import type { Card, CardId, CardUserData } from './models/Card';
 
 const apiClient = axios.create({
   baseURL: import.meta.env.VITE_APP_API_URL,
@@ -14,14 +14,12 @@ interface AnswerPayload {
 
 export const APIService = {
   getAllCards(tags?: string[]): Promise<Card[]> {
-    // Construct the query parameters object
-    const queryParams = {};
+    const queryParams: Record<string, string> = {};
+
     if (tags && tags.length > 0) {
-      // If tags are provided, add them to the query parameters
       queryParams['tags'] = tags.join(',');
     }
 
-    // Make the API call with the constructed query parameters
     return apiClient.get('/cards', { params: queryParams }).then(res => res.data);
   },
 
