@@ -1,6 +1,7 @@
 import axios from 'axios'
 import type { Card, CardId, CardUserData } from './models/Card'
 import type { AnswerPayload } from './models/AnswerPayload'
+import type { CardType } from './models/CardType'
 
 const rawBaseUrl = import.meta.env.VITE_APP_API_URL
 
@@ -39,12 +40,15 @@ export function toUserMessage(error: unknown): string {
 }
 
 export const APIService = {
-  getAllCards(tags?: string[]): Promise<Card[]> {
+  getAllCards(tags?: string[], type?: CardType): Promise<Card[]> {
     const params: Record<string, string> = {}
     const cleaned = tags?.map((tag) => tag.trim()).filter(Boolean) ?? []
 
     if (cleaned.length > 0) {
       params.tags = cleaned.join(',')
+    }
+    if (type) {
+      params.type = type
     }
 
     return apiClient.get<Card[]>('/cards', { params }).then((res) => res.data)
@@ -54,8 +58,12 @@ export const APIService = {
     return apiClient.post<Card>('/cards', data).then((res) => res.data)
   },
 
-  getCardsForQuizz(date?: string): Promise<Card[]> {
-    return apiClient.get<Card[]>('/cards/quizz', { params: { date } }).then((res) => res.data)
+  /** Sans `type`, renvoie les cartes dues des deux cycles mélangées : à
+   *  réserver aux écrans qui ne lancent pas de session (ex. l'accueil). */
+  getCardsForQuizz(date?: string, type?: CardType): Promise<Card[]> {
+    return apiClient
+      .get<Card[]>('/cards/quizz', { params: { date, type } })
+      .then((res) => res.data)
   },
 
   answerCard(cardId: CardId, answer: AnswerPayload): Promise<void> {

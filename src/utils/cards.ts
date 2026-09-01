@@ -1,4 +1,5 @@
 import { Category } from '@/api/models/Category'
+import { CardType } from '@/api/models/CardType'
 import type { Card } from '@/api/models/Card'
 
 /** Ordre de progression du système de Leitner, de la boîte 1 à la carte acquise. */
@@ -67,4 +68,23 @@ export function normalizeAnswer(value: string): string {
 
 export function answersMatch(given: string, expected: string): boolean {
   return normalizeAnswer(given) === normalizeAnswer(expected)
+}
+
+/** Une carte sans type (créée avant l'introduction du champ) est traitée
+ *  comme ATOMIC : c'était le seul mode disponible jusque-là. */
+export function effectiveCardType(card: Pick<Card, 'type'>): CardType {
+  return card.type ?? CardType.ATOMIC
+}
+
+export function isOralCard(card: Pick<Card, 'type'>): boolean {
+  return effectiveCardType(card) === CardType.ORAL
+}
+
+const CARD_TYPE_LABELS: Record<CardType, string> = {
+  [CardType.ATOMIC]: 'Atomique',
+  [CardType.ORAL]: 'Oral',
+}
+
+export function cardTypeLabel(type: CardType): string {
+  return CARD_TYPE_LABELS[type]
 }

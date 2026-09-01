@@ -61,8 +61,10 @@ test.describe('Création de fiches', () => {
     await page.click('#create-button')
 
     await expect(page.locator('.v-dialog')).toBeHidden()
+    // Le type par défaut du formulaire est ATOMIC : le sélecteur Atomique/Oral
+    // n'est pas manipulé dans ce parcours.
     expect(created).toEqual([
-      { question: fixture.question, answer: fixture.answer, tag: fixture.tag },
+      { question: fixture.question, answer: fixture.answer, tag: fixture.tag, type: 'ATOMIC' },
     ])
     // La carte créée est ajoutée en tête de liste.
     await expect(page.locator('#card-created-card-id')).toContainText(fixture.question)

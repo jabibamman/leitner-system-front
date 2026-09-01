@@ -1,9 +1,10 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
-import { mdiCardsOutline, mdiMagnify, mdiPlus, mdiRefresh } from '@mdi/js'
+import { mdiCardsOutline, mdiMagnify, mdiMicrophone, mdiPlus, mdiRefresh } from '@mdi/js'
 import APIService, { toUserMessage } from '@/api/APIService'
 import type { Card, CardWithUiState } from '@/api/models/Card'
-import { categoryColor, categoryLabel } from '@/utils/cards'
+import { CardType } from '@/api/models/CardType'
+import { categoryColor, categoryLabel, isOralCard } from '@/utils/cards'
 
 const cards = ref<CardWithUiState[]>([])
 const search = ref('')
@@ -11,7 +12,7 @@ const loading = ref(true)
 const error = ref('')
 const creating = ref(false)
 const showCreateModal = ref(false)
-const newCard = ref({ question: '', tag: '', answer: '' })
+const newCard = ref({ question: '', tag: '', answer: '', type: CardType.ATOMIC })
 const errorMessages = ref({ question: '', tag: '', answer: '' })
 
 let searchTimer: ReturnType<typeof setTimeout> | undefined
@@ -77,9 +78,10 @@ async function createCard() {
       question: newCard.value.question.trim(),
       answer: newCard.value.answer.trim(),
       tag: newCard.value.tag.trim() || undefined,
+      type: newCard.value.type,
     })
     cards.value.unshift(withUiState(created))
-    newCard.value = { question: '', tag: '', answer: '' }
+    newCard.value = { question: '', tag: '', answer: '', type: CardType.ATOMIC }
     closeCreateModal()
   } catch (err) {
     errorMessages.value.question = toUserMessage(err)
@@ -144,6 +146,10 @@ onBeforeUnmount(() => clearTimeout(searchTimer))
         <v-chip size="x-small" :color="categoryColor(card.category)" variant="flat">
           {{ categoryLabel(card.category) }}
         </v-chip>
+        <v-chip v-if="isOralCard(card)" size="x-small" color="secondary" variant="flat">
+          <v-icon :icon="mdiMicrophone" size="12" start />
+          Oral
+        </v-chip>
         <v-chip v-if="card.tag" size="x-small" variant="outlined">{{ card.tag }}</v-chip>
       </div>
 
@@ -204,7 +210,17 @@ onBeforeUnmount(() => clearTimeout(searchTimer))
             label="Tag (optionnel)"
             autocapitalize="none"
             autocorrect="off"
+            class="mb-4"
           />
+
+          <div class="text-caption text-medium-emphasis mb-2">Type de carte</div>
+          <v-btn-toggle v-model="newCard.type" color="primary" variant="outlined" divided mandatory class="w-100">
+            <v-btn :value="CardType.ATOMIC" class="flex-grow-1">Atomique</v-btn>
+            <v-btn :value="CardType.ORAL" class="flex-grow-1">
+              <v-icon :icon="mdiMicrophone" size="16" start />
+              Oral
+            </v-btn>
+          </v-btn-toggle>
         </v-card-text>
 
         <v-card-actions class="px-4 pb-4 dialog-actions">

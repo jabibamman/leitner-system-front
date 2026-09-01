@@ -1,16 +1,16 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
-import { mdiCheckDecagram, mdiCardsOutline, mdiPlay, mdiRefresh } from '@mdi/js'
+import { mdiCheckDecagram, mdiCardsOutline, mdiMicrophone, mdiPlay, mdiRefresh } from '@mdi/js'
 import APIService, { toUserMessage } from '@/api/APIService'
 import type { Card } from '@/api/models/Card'
 import { Category } from '@/api/models/Category'
-import { deckProgress } from '@/utils/cards'
+import { deckProgress, isOralCard } from '@/utils/cards'
 import { readLastSession, type QuizSession } from '@/utils/session'
 
 const loading = ref(true)
 const error = ref('')
 const cards = ref<Card[]>([])
-const dueToday = ref(0)
+const dueCards = ref<Card[]>([])
 const lastSession = ref<QuizSession | null>(null)
 
 /** Sans données chargées, une erreur ne doit pas laisser croire que le
@@ -21,6 +21,12 @@ const progress = computed(() => deckProgress(cards.value))
 const masteredCards = computed(
   () => cards.value.filter((card) => card.category === Category.DONE).length,
 )
+
+// Les deux cycles sont indépendants (voir QuizView) : l'oral n'apparaît que
+// deux fois par semaine, ce qui est normal et pas une carte manquante.
+const dueOral = computed(() => dueCards.value.filter(isOralCard))
+const dueAtomic = computed(() => dueCards.value.filter((card) => !isOralCard(card)))
+const dueToday = computed(() => dueCards.value.length)
 
 const lastSessionScore = computed(() => {
   const session = lastSession.value
@@ -44,7 +50,7 @@ async function load() {
       APIService.getCardsForQuizz(),
     ])
     cards.value = allCards
-    dueToday.value = quizCards.length
+    dueCards.value = quizCards
   } catch (err) {
     error.value = toUserMessage(err)
   } finally {
@@ -86,8 +92,14 @@ onMounted(() => {
         <div class="text-h4 font-weight-bold mb-1">
           {{ dueToday }} {{ dueToday > 1 ? 'cartes' : 'carte' }}
         </div>
-        <div class="text-body-2 mb-4" :class="{ 'text-medium-emphasis': dueToday === 0 }">
+        <div class="text-body-2 mb-2" :class="{ 'text-medium-emphasis': dueToday === 0 }">
           {{ dueToday > 0 ? 'à réviser pour rester à jour' : 'Tout est révisé, reviens demain !' }}
+        </div>
+        <div v-if="dueToday > 0" class="text-caption mb-4 due-breakdown">
+          {{ dueAtomic.length }} atomique{{ dueAtomic.length > 1 ? 's' : '' }}
+          <template v-if="dueOral.length > 0">
+            · <v-icon :icon="mdiMicrophone" size="12" /> {{ dueOral.length }} orale{{ dueOral.length > 1 ? 's' : '' }}
+          </template>
         </div>
         <v-btn
           block
@@ -158,3 +170,9 @@ onMounted(() => {
     </template>
   </div>
 </template>
+
+<style scoped>
+.due-breakdown {
+  opacity: 0.85;
+}
+</style>

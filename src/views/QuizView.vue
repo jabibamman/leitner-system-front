@@ -1,34 +1,50 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import {
   mdiArrowRight,
   mdiCheck,
   mdiClose,
   mdiEye,
   mdiHome,
+  mdiMicrophone,
   mdiPlay,
   mdiRefresh,
+  mdiTimerOutline,
 } from '@mdi/js'
 import APIService, { toUserMessage } from '@/api/APIService'
 import type { Card } from '@/api/models/Card'
+import { CardType } from '@/api/models/CardType'
 import { answersMatch } from '@/utils/cards'
 import { readQuizMode, saveLastSession, saveQuizMode, type QuizMode } from '@/utils/session'
 
 /**
- * Déroulé d'une carte :
- *  - auto-évaluation : question -> revealed -> (je savais / je ne savais pas) -> carte suivante
- *  - saisie          : question -> (vérifier) -> feedback -> carte suivante
+ * Déroulé complet :
+ *  choice (quel cycle ?) -> [setup, atomique uniquement : mode de révision]
+ *  -> question -> revealed / feedback -> (carte suivante) -> finished
  */
-type Step = 'intro' | 'question' | 'revealed' | 'feedback' | 'finished'
+type Step = 'choice' | 'setup' | 'question' | 'revealed' | 'feedback' | 'finished'
+
+const ORAL_TIMER_SECONDS = 60
 
 const loading = ref(true)
 const error = ref('')
 const notice = ref('')
 const noticeVisible = ref(false)
 
-const cards = ref<Card[]>([])
+// Chargées séparément : mélanger les deux cycles dans une même session fait
+// disparaître l'oral au profit du silencieux, donc on ne les fusionne jamais.
+const atomicCards = ref<Card[]>([])
+const oralCards = ref<Card[]>([])
+
+const sessionType = ref<CardType | null>(null)
+const cards = computed<Card[]>(() =>
+  sessionType.value === CardType.ORAL ? oralCards.value : atomicCards.value,
+)
+const isOralSession = computed(() => sessionType.value === CardType.ORAL)
+const otherCards = computed(() => (isOralSession.value ? atomicCards.value : oralCards.value))
+
 const index = ref(0)
-const step = ref<Step>('intro')
+const step = ref<Step>('choice')
 const mode = ref<QuizMode>(readQuizMode())
 
 const userAnswer = ref('')
@@ -36,6 +52,9 @@ const lastAnswerWasCorrect = ref(false)
 const submitting = ref(false)
 const correctCount = ref(0)
 const wrongCount = ref(0)
+
+const timeLeft = ref(ORAL_TIMER_SECONDS)
+let timerHandle: ReturnType<typeof setInterval> | undefined
 
 const currentCard = computed<Card | null>(() => cards.value[index.value] ?? null)
 const total = computed(() => cards.value.length)
@@ -49,7 +68,9 @@ const successRate = computed(() =>
 const isLastCard = computed(() => index.value >= total.value - 1)
 /** Sur une erreur de chargement, annoncer « rien à réviser » serait trompeur :
  *  on ne montre alors que l'alerte. */
-const hasCards = computed(() => !error.value || cards.value.length > 0)
+const hasLoaded = computed(
+  () => !error.value || atomicCards.value.length + oralCards.value.length > 0,
+)
 const showsAnswer = computed(() => step.value === 'revealed' || step.value === 'feedback')
 
 const modeModel = computed({
@@ -64,7 +85,12 @@ async function loadCards() {
   loading.value = true
   error.value = ''
   try {
-    cards.value = await APIService.getCardsForQuizz()
+    const [atomic, oral] = await Promise.all([
+      APIService.getCardsForQuizz(undefined, CardType.ATOMIC),
+      APIService.getCardsForQuizz(undefined, CardType.ORAL),
+    ])
+    atomicCards.value = atomic
+    oralCards.value = oral
   } catch (err) {
     error.value = toUserMessage(err)
   } finally {
@@ -72,13 +98,46 @@ async function loadCards() {
   }
 }
 
-function startQuiz() {
+function startCards() {
   index.value = 0
   correctCount.value = 0
   wrongCount.value = 0
   userAnswer.value = ''
   step.value = cards.value.length > 0 ? 'question' : 'finished'
 }
+
+function chooseSession(type: CardType) {
+  sessionType.value = type
+  // L'oral n'a qu'un seul mode (à voix haute) : pas d'écran de réglage,
+  // on démarre directement.
+  if (type === CardType.ATOMIC) {
+    step.value = 'setup'
+  } else {
+    startCards()
+  }
+}
+
+function stopTimer() {
+  clearInterval(timerHandle)
+  timerHandle = undefined
+}
+
+function startTimer() {
+  stopTimer()
+  timeLeft.value = ORAL_TIMER_SECONDS
+  timerHandle = setInterval(() => {
+    if (timeLeft.value > 0) timeLeft.value--
+  }, 1000)
+}
+
+// Le chronomètre ne court que pendant la question orale.
+watch(step, (currentStep) => {
+  if (isOralSession.value && currentStep === 'question') {
+    startTimer()
+  } else {
+    stopTimer()
+  }
+})
 
 /**
  * Envoie la réponse au back. Un échec réseau ne doit pas interrompre la
@@ -100,8 +159,8 @@ async function answer(isCorrect: boolean) {
     noticeVisible.value = true
   } finally {
     submitting.value = false
-    // En auto-évaluation la réponse est déjà sous les yeux : on enchaîne.
-    if (mode.value === 'flip') next()
+    // En auto-évaluation et à l'oral, la réponse est déjà sous les yeux : on enchaîne.
+    if (mode.value === 'flip' || isOralSession.value) next()
     else step.value = 'feedback'
   }
 }
@@ -123,7 +182,18 @@ function next() {
   step.value = 'finished'
 }
 
+function backToChoice() {
+  stopTimer()
+  sessionType.value = null
+  step.value = 'choice'
+}
+
+function continueWithOtherSession() {
+  chooseSession(isOralSession.value ? CardType.ATOMIC : CardType.ORAL)
+}
+
 onMounted(loadCards)
+onBeforeUnmount(stopTimer)
 </script>
 
 <template>
@@ -142,48 +212,89 @@ onMounted(loadCards)
 
     <v-skeleton-loader v-if="loading" type="article, actions" />
 
-    <!-- Écran de départ : on annonce la charge de travail avant de lancer. -->
-    <v-card v-else-if="hasCards && step === 'intro'" variant="tonal" class="pa-6 text-center">
-      <div class="text-h5 font-weight-bold mb-2">
-        {{ total > 0 ? 'Prêt pour la révision ?' : 'Rien à réviser' }}
-      </div>
-      <p class="text-body-2 text-medium-emphasis mb-6">
-        <template v-if="total > 0">
-          {{ total }} {{ total > 1 ? "cartes t'attendent" : "carte t'attend" }} aujourd'hui.
-        </template>
-        <template v-else>
-          Tes cartes sont à jour. Reviens demain, ou ajoute-en de nouvelles.
-        </template>
-      </p>
+    <!-- Choix de session : les deux cycles ne se mélangent jamais. -->
+    <template v-else-if="hasLoaded && step === 'choice'">
+      <v-card
+        variant="tonal"
+        class="pa-5 mb-3 session-choice"
+        :class="{ 'session-choice--disabled': atomicCards.length === 0 }"
+        @click="atomicCards.length > 0 && chooseSession(CardType.ATOMIC)"
+      >
+        <div class="d-flex align-center justify-space-between mb-1">
+          <span class="text-subtitle-1 font-weight-bold">Session atomique</span>
+          <v-chip size="small" :color="atomicCards.length > 0 ? 'primary' : undefined" variant="flat">
+            {{ atomicCards.length }}
+          </v-chip>
+        </div>
+        <p class="text-body-2 text-medium-emphasis mb-0">Révision silencieuse, à ton rythme.</p>
+      </v-card>
 
-      <template v-if="total > 0">
-        <div class="text-caption text-medium-emphasis mb-2">Mode de révision</div>
-        <v-btn-toggle
-          v-model="modeModel"
-          color="primary"
-          variant="outlined"
-          divided
-          mandatory
-          class="mb-6 w-100"
-        >
-          <v-btn value="flip" class="flex-grow-1">Auto-évaluation</v-btn>
-          <v-btn value="typing" class="flex-grow-1">Saisie</v-btn>
-        </v-btn-toggle>
+      <v-card
+        variant="tonal"
+        class="pa-5 mb-6 session-choice"
+        :class="{ 'session-choice--disabled': oralCards.length === 0 }"
+        @click="oralCards.length > 0 && chooseSession(CardType.ORAL)"
+      >
+        <div class="d-flex align-center justify-space-between mb-1">
+          <span class="text-subtitle-1 font-weight-bold">
+            <v-icon :icon="mdiMicrophone" size="18" class="mr-1" />
+            Session orale
+          </span>
+          <v-chip size="small" :color="oralCards.length > 0 ? 'primary' : undefined" variant="flat">
+            {{ oralCards.length }}
+          </v-chip>
+        </div>
+        <p class="text-body-2 text-medium-emphasis mb-0">
+          Debout, à voix haute, 60&nbsp;secondes par carte. Le critère est la
+          fluidité, pas l'exactitude — une carte ne monte de boîte que si tu
+          l'as sortie sans hésiter ni relire.
+        </p>
+      </v-card>
 
-        <v-btn block size="x-large" color="primary" :prepend-icon="mdiPlay" @click="startQuiz">
-          Commencer
+      <v-card
+        v-if="atomicCards.length === 0 && oralCards.length === 0"
+        variant="tonal"
+        class="pa-6 text-center"
+      >
+        <div class="text-subtitle-1 font-weight-medium mb-2">Rien à réviser</div>
+        <p class="text-body-2 text-medium-emphasis mb-4">
+          Tes deux cycles sont à jour. Reviens plus tard, ou ajoute des cartes.
+        </p>
+        <v-btn block size="large" color="primary" variant="tonal" to="/card">
+          Voir mes cartes
         </v-btn>
-      </template>
-      <v-btn v-else block size="large" color="primary" variant="tonal" to="/card">
-        Voir mes cartes
+      </v-card>
+    </template>
+
+    <!-- Réglages de la session atomique (l'oral saute directement à la question). -->
+    <v-card v-else-if="hasLoaded && step === 'setup'" variant="tonal" class="pa-6 text-center">
+      <div class="text-h5 font-weight-bold mb-2">Session atomique</div>
+      <p class="text-body-2 text-medium-emphasis mb-6">
+        {{ atomicCards.length }} {{ atomicCards.length > 1 ? "cartes t'attendent" : "carte t'attend" }}.
+      </p>
+      <div class="text-caption text-medium-emphasis mb-2">Mode de révision</div>
+      <v-btn-toggle v-model="modeModel" color="primary" variant="outlined" divided mandatory class="mb-6 w-100">
+        <v-btn value="flip" class="flex-grow-1">Auto-évaluation</v-btn>
+        <v-btn value="typing" class="flex-grow-1">Saisie</v-btn>
+      </v-btn-toggle>
+      <v-btn block size="x-large" color="primary" :prepend-icon="mdiPlay" @click="startCards">
+        Commencer
       </v-btn>
     </v-card>
 
     <!-- Révision en cours -->
-    <template v-else-if="hasCards && step !== 'finished'">
+    <template v-else-if="hasLoaded && (step === 'question' || step === 'revealed' || step === 'feedback')">
       <div class="d-flex align-center justify-space-between mb-2">
         <span class="text-caption text-medium-emphasis">Carte {{ index + 1 }} sur {{ total }}</span>
-        <span class="text-caption text-medium-emphasis">
+        <span
+          v-if="isOralSession"
+          class="text-caption font-weight-bold d-flex align-center"
+          :class="timeLeft <= 10 ? 'text-error' : 'text-medium-emphasis'"
+        >
+          <v-icon :icon="mdiTimerOutline" size="16" class="mr-1" />
+          {{ timeLeft }}s
+        </span>
+        <span v-else class="text-caption text-medium-emphasis">
           {{ correctCount }} ✓ · {{ wrongCount }} ✗
         </span>
       </div>
@@ -197,7 +308,9 @@ onMounted(loadCards)
       />
 
       <v-card variant="tonal" class="pa-6 mb-4">
-        <div class="text-overline text-medium-emphasis mb-2">Question</div>
+        <div class="text-overline text-medium-emphasis mb-2">
+          {{ isOralSession ? 'À dire à voix haute' : 'Question' }}
+        </div>
         <p class="text-h6 font-weight-medium wrap-text">{{ currentCard?.question }}</p>
 
         <template v-if="showsAnswer">
@@ -225,10 +338,10 @@ onMounted(loadCards)
           </v-btn>
         </template>
 
-        <!-- Auto-évaluation : deux grandes cibles, aucun clavier. -->
+        <!-- Auto-évaluation et oral : deux grandes cibles, aucun clavier. -->
         <template v-else-if="step === 'revealed'">
           <div class="text-caption text-center text-medium-emphasis mb-2">
-            Tu avais la bonne réponse ?
+            {{ isOralSession ? 'Sortie sans hésiter, sans relire ?' : 'Tu avais la bonne réponse ?' }}
           </div>
           <v-row dense>
             <v-col cols="6">
@@ -241,7 +354,7 @@ onMounted(loadCards)
                 :disabled="submitting"
                 @click="answer(false)"
               >
-                Non
+                {{ isOralSession ? 'À retravailler' : 'Non' }}
               </v-btn>
             </v-col>
             <v-col cols="6">
@@ -254,13 +367,13 @@ onMounted(loadCards)
                 :disabled="submitting"
                 @click="answer(true)"
               >
-                Oui
+                {{ isOralSession ? 'Fluide' : 'Oui' }}
               </v-btn>
             </v-col>
           </v-row>
         </template>
 
-        <template v-else-if="mode === 'typing'">
+        <template v-else-if="!isOralSession && mode === 'typing'">
           <v-text-field
             v-model="userAnswer"
             label="Ta réponse"
@@ -285,41 +398,31 @@ onMounted(loadCards)
         </template>
 
         <template v-else>
-          <v-btn
-            block
-            size="x-large"
-            color="primary"
-            :prepend-icon="mdiEye"
-            @click="step = 'revealed'"
-          >
-            Voir la réponse
+          <v-btn block size="x-large" color="primary" :prepend-icon="mdiEye" @click="step = 'revealed'">
+            {{ isOralSession ? "J'ai fini de répondre" : 'Voir la réponse' }}
           </v-btn>
         </template>
       </div>
     </template>
 
     <!-- Récapitulatif -->
-    <v-card v-else-if="hasCards" variant="tonal" class="pa-6 text-center">
+    <v-card v-else-if="hasLoaded" variant="tonal" class="pa-6 text-center">
       <div class="text-h5 font-weight-bold mb-1">Session terminée</div>
       <p class="text-body-2 text-medium-emphasis mb-5">
         {{ answeredCount > 0 ? 'Reviens demain pour consolider.' : "Aucune carte à réviser aujourd'hui." }}
       </p>
 
       <template v-if="answeredCount > 0">
-        <v-progress-circular
-          :model-value="successRate"
-          :size="120"
-          :width="10"
-          color="primary"
-          class="mb-5"
-        >
+        <v-progress-circular :model-value="successRate" :size="120" :width="10" color="primary" class="mb-5">
           <span class="text-h5 font-weight-bold">{{ successRate }}%</span>
         </v-progress-circular>
 
         <v-row dense class="mb-5">
           <v-col cols="6">
             <div class="text-h5 font-weight-bold text-success">{{ correctCount }}</div>
-            <div class="text-caption text-medium-emphasis">bonnes réponses</div>
+            <div class="text-caption text-medium-emphasis">
+              {{ isOralSession ? 'fluides' : 'bonnes réponses' }}
+            </div>
           </v-col>
           <v-col cols="6">
             <div class="text-h5 font-weight-bold text-error">{{ wrongCount }}</div>
@@ -328,7 +431,25 @@ onMounted(loadCards)
         </v-row>
       </template>
 
-      <v-btn block size="large" color="primary" :prepend-icon="mdiHome" to="/">
+      <v-btn
+        v-if="otherCards.length > 0"
+        block
+        size="large"
+        color="primary"
+        variant="tonal"
+        class="mb-3"
+        @click="continueWithOtherSession"
+      >
+        Continuer avec la session {{ isOralSession ? 'atomique' : 'orale' }}
+      </v-btn>
+      <v-btn
+        block
+        size="large"
+        :variant="answeredCount > 0 ? 'text' : 'flat'"
+        color="primary"
+        :prepend-icon="mdiHome"
+        to="/"
+      >
         Retour à l'accueil
       </v-btn>
     </v-card>
@@ -346,11 +467,25 @@ onMounted(loadCards)
   white-space: pre-wrap;
 }
 
-/* Les boutons restent sous le pouce même si la question est longue. */
+/* Les boutons restent sous le pouce même si la question est longue.
+   La navigation basse est en position fixed, hors du flux du document :
+   un simple `bottom: 8px` sur cette zone sticky la ferait passer dessous
+   sur une réponse assez longue pour dépasser l'écran (le cas typique
+   d'une réponse orale). Il faut donc réserver sa hauteur explicitement. */
 .actions {
   position: sticky;
-  bottom: 8px;
+  bottom: calc(64px + 8px + var(--safe-area-bottom));
   padding-block: 8px;
   background: rgb(var(--v-theme-background));
+}
+
+.session-choice {
+  cursor: pointer;
+  transition: opacity 0.2s;
+}
+
+.session-choice--disabled {
+  cursor: default;
+  opacity: 0.5;
 }
 </style>
