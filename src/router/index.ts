@@ -1,6 +1,5 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import HomeView from '../views/HomeView.vue'
-import CardLiBraryView from '../views/CardLibraryView.vue'
 
 const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
@@ -8,19 +7,28 @@ const router = createRouter({
     {
       path: '/',
       name: 'home',
-      component: HomeView
+      component: HomeView,
     },
     {
       path: '/card',
       name: 'card-library',
-      component: CardLiBraryView
+      component: () => import('../views/CardLibraryView.vue'),
     },
     {
       path: '/quiz',
       name: 'quiz',
-      component: () => import('../views/QuizView.vue')
-    }
-  ]
+      component: () => import('../views/QuizView.vue'),
+    },
+    {
+      // Une URL inconnue (favori périmé, faute de frappe) ramène à l'accueil
+      // plutôt que sur un écran blanc.
+      path: '/:pathMatch(.*)*',
+      redirect: '/',
+    },
+  ],
+  scrollBehavior() {
+    return { top: 0 }
+  },
 })
 
 export default router

@@ -1,47 +1,83 @@
-import { test } from '@playwright/test';
+import { expect, test } from '@playwright/test'
 
-const questions = {
-  chromium: 'Quelle est la définition du Clean Code ?',
-  webkit: 'Qu\'est-ce que le DDD ?',
-  firefox: 'Citez les principes SOLID.',
-};
+const API = 'http://localhost:8080'
 
-const answers = {
-    chromium: 'Code facile à lire, à comprendre et à maintenir',
-    webkit: 'Domain Driven Design',
-    firefox: 'Single Responsibility Principle, Open/Closed Principle, Liskov Substitution Principle, Interface Segregation Principle, Dependency Inversion Principle',
-};
+type Fixture = { question: string; answer: string; tag: string }
 
-const tags = {
-  chromium: 'Programmation',
-  webkit: 'Architecture',
-  firefox: 'Conception',
-};
+const cardsByBrowser: Record<string, Fixture> = {
+  chromium: {
+    question: 'Quelle est la définition du Clean Code ?',
+    answer: 'Code facile à lire, à comprendre et à maintenir',
+    tag: 'Programmation',
+  },
+  webkit: {
+    question: "Qu'est-ce que le DDD ?",
+    answer: 'Domain Driven Design',
+    tag: 'Architecture',
+  },
+  firefox: {
+    question: 'Citez les principes SOLID.',
+    answer: 'Single Responsibility, Open/Closed, Liskov, Interface Segregation, Dependency Inversion',
+    tag: 'Conception',
+  },
+}
 
-test.describe('Tests spécifiques pour chaque navigateur', () => {
-    let browserName;
+/**
+ * L'API est simulée : le test valide le parcours de l'interface, pas le back,
+ * et reste donc exécutable en CI sans base de données.
+ */
+test.describe('Création de fiches', () => {
+  test('Créer une nouvelle carte', async ({ page }, testInfo) => {
+    const fixture = cardsByBrowser[testInfo.project.name] ?? cardsByBrowser.chromium
+    const created: unknown[] = []
 
-    test.beforeEach(async ({}, testInfo) => {
-        browserName = testInfo.project.name;
-    });
+    await page.route(`${API}/cards`, async (route) => {
+      if (route.request().method() === 'POST') {
+        const body = route.request().postDataJSON()
+        created.push(body)
+        await route.fulfill({
+          status: 201,
+          contentType: 'application/json',
+          body: JSON.stringify({ id: 'created-card-id', category: 'FIRST', ...body }),
+        })
+        return
+      }
+      await route.fulfill({ status: 200, contentType: 'application/json', body: '[]' })
+    })
+    await page.route(`${API}/cards?**`, (route) =>
+      route.fulfill({ status: 200, contentType: 'application/json', body: '[]' }),
+    )
 
-    test(`Créer une nouvelle carte selon le navigateur`, async ({ page }) => {
-        const question = questions[browserName];
-        const answer = answers[browserName];
-        const tag = tags[browserName];
+    await page.goto('/card')
 
-        await page.goto('http://localhost:5173/card');
-        await page.click('text=Créer une carte');
-        await page.waitForSelector('.v-dialog', { state: 'visible' });
-        await page.fill('#newCard_question', question);
-        await page.fill('#newCard_tag', tag);
-        await page.fill('#newCard_answer', answer);
-        await page.click('#create-button');
-        await page.waitForTimeout(1000);
-        const lastCard = await page.$('.v-card:last-child');
-        if (lastCard) {
-          const lastCardID = await lastCard.getAttribute('id');
-          console.log(`L'ID de la dernière carte est : ${lastCardID}`);
-        }
-      });
-});
+    // Le bouton de création est un bouton flottant : on le cible par son
+    // libellé accessible plutôt que par son texte.
+    await page.getByRole('button', { name: 'Créer une carte' }).click()
+    await expect(page.locator('.v-dialog')).toBeVisible()
+
+    await page.fill('#newCard_question', fixture.question)
+    await page.fill('#newCard_tag', fixture.tag)
+    await page.fill('#newCard_answer', fixture.answer)
+    await page.click('#create-button')
+
+    await expect(page.locator('.v-dialog')).toBeHidden()
+    expect(created).toEqual([
+      { question: fixture.question, answer: fixture.answer, tag: fixture.tag },
+    ])
+    // La carte créée est ajoutée en tête de liste.
+    await expect(page.locator('#card-created-card-id')).toContainText(fixture.question)
+  })
+
+  test('Le champ question est obligatoire', async ({ page }) => {
+    await page.route(`${API}/cards**`, (route) =>
+      route.fulfill({ status: 200, contentType: 'application/json', body: '[]' }),
+    )
+
+    await page.goto('/card')
+    await page.getByRole('button', { name: 'Créer une carte' }).click()
+    await page.click('#create-button')
+
+    await expect(page.getByText('La question est obligatoire')).toBeVisible()
+    await expect(page.locator('.v-dialog')).toBeVisible()
+  })
+})

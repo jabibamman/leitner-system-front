@@ -1,10 +1,26 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="fr">
   <head>
     <meta charset="UTF-8">
-    <link rel="icon" href="/favicon.ico">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Vite App</title>
+    <!-- viewport-fit=cover : le contenu passe sous l'encoche / la barre d'accueil iPhone,
+         les safe-areas sont ensuite gérées en CSS (voir base.css). -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <meta name="description" content="Révise tes cartes avec la méthode Leitner, directement depuis ton téléphone.">
+    <meta name="color-scheme" content="light dark">
+    <meta name="theme-color" content="#FF5722" media="(prefers-color-scheme: light)">
+    <meta name="theme-color" content="#121212" media="(prefers-color-scheme: dark)">
+
+    <!-- Ajout à l'écran d'accueil iOS -->
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="Leitner">
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png">
+
+    <link rel="icon" href="/favicon-32.png" sizes="32x32" type="image/png">
+    <link rel="icon" href="/favicon.ico" sizes="any">
+    <link rel="manifest" href="/manifest.webmanifest">
+    <title>Leitner — Révisions</title>
   </head>
   <body>
     <div id="app"></div>
