@@ -1,70 +1,160 @@
-<template>
-  <v-container class="grey darken-4 pa-6"> 
-    <v-row justify="center">
-      <v-col cols="12" md="4" class="mb-4"> 
-        <v-card class="elevation-12" color="black">
-          <v-card-title class="green--text display-1">Progression</v-card-title> 
-          <v-card-text class="text-center">
-            <v-progress-circular :value="progress" :size="100" color="green" class="my-2">{{ progress }}%</v-progress-circular>
-          </v-card-text>
-        </v-card>
-      </v-col>
+<script setup lang="ts">
+import { computed, onMounted, ref } from 'vue'
+import { mdiCheckDecagram, mdiCardsOutline, mdiPlay, mdiRefresh } from '@mdi/js'
+import APIService, { toUserMessage } from '@/api/APIService'
+import type { Card } from '@/api/models/Card'
+import { Category } from '@/api/models/Category'
+import { deckProgress } from '@/utils/cards'
+import { readLastSession, type QuizSession } from '@/utils/session'
 
-      <v-col cols="12" md="4" class="mb-4"> 
-        <v-card class="elevation-12" color="black">
-          <v-card-title class="green--text display-1">Cartes à réviser aujourd'hui</v-card-title>
-          <v-card-text class="text-center">
-            <v-chip color="green" text-color="white">{{ cardsToday }} cartes</v-chip>
-          </v-card-text>
-        </v-card>
-      </v-col>
+const loading = ref(true)
+const error = ref('')
+const cards = ref<Card[]>([])
+const dueToday = ref(0)
+const lastSession = ref<QuizSession | null>(null)
 
-      <v-col cols="12" md="4" class="mb-4"> 
-        <v-card class="elevation-12" color="black">
-          <v-card-title class="green--text display-1">Statistiques de performance</v-card-title>
-          <v-card-text>
-            <v-list class="green--text">
-              <v-list-item>
-                <v-list-item-content>Taux de réussite: {{ successRate }}%</v-list-item-content>
-              </v-list-item>
-              <v-list-item>
-                <v-list-item-content>Cartes maîtrisées: {{ masteredCards }}</v-list-item-content>
-              </v-list-item>
-            </v-list>
-          </v-card-text>
-        </v-card>
-      </v-col>
+/** Sans données chargées, une erreur ne doit pas laisser croire que le
+ *  paquet est vide ou à jour : on n'affiche alors que l'alerte. */
+const hasData = computed(() => !error.value || cards.value.length > 0)
 
-    </v-row>
-  </v-container>
-</template>
+const progress = computed(() => deckProgress(cards.value))
+const masteredCards = computed(
+  () => cards.value.filter((card) => card.category === Category.DONE).length,
+)
 
-<script lang="ts">
-import APIService from "@/api/APIService"; 
+const lastSessionScore = computed(() => {
+  const session = lastSession.value
+  if (!session || session.total === 0) return null
+  return {
+    ...session,
+    rate: Math.round((session.correct / session.total) * 100),
+    date: new Date(session.finishedAt).toLocaleDateString('fr-FR', {
+      day: 'numeric',
+      month: 'long',
+    }),
+  }
+})
 
-export default {
-  name: "HomeView",
-  data() {
-    return {
-      progress: 0,
-      cardsToday: 0, 
-      successRate: 0, 
-      masteredCards: 0,
-    };
-  },
-  mounted() {
-    this.fetchCardsForToday();
-  },
-  methods: {
-    async fetchCardsForToday() {
-      try {
-        const cards = await APIService.getCardsForQuizz();
-        this.cardsToday = cards.length;
-      } catch (error) {
-        console.error("Erreur lors de la récupération des cartes pour aujourd'hui:", error);
-      }
-    },
+async function load() {
+  loading.value = true
+  error.value = ''
+  try {
+    const [allCards, quizCards] = await Promise.all([
+      APIService.getAllCards(),
+      APIService.getCardsForQuizz(),
+    ])
+    cards.value = allCards
+    dueToday.value = quizCards.length
+  } catch (err) {
+    error.value = toUserMessage(err)
+  } finally {
+    loading.value = false
+  }
+}
 
-  },
-};
+onMounted(() => {
+  lastSession.value = readLastSession()
+  load()
+})
 </script>
+
+<template>
+  <div class="pa-4">
+    <v-alert
+      v-if="error"
+      type="error"
+      variant="tonal"
+      rounded="lg"
+      class="mb-4"
+      :text="error"
+    >
+      <template #append>
+        <v-btn :icon="mdiRefresh" variant="text" size="small" aria-label="Réessayer" @click="load" />
+      </template>
+    </v-alert>
+
+    <v-skeleton-loader v-if="loading" type="card, list-item-two-line, list-item-two-line" />
+
+    <template v-else-if="hasData">
+      <!-- Action principale : atteignable au pouce, toujours en haut d'écran. -->
+      <v-card
+        :color="dueToday > 0 ? 'primary' : 'surface'"
+        :variant="dueToday > 0 ? 'flat' : 'tonal'"
+        class="pa-5 mb-4"
+      >
+        <div class="text-overline mb-1">Aujourd'hui</div>
+        <div class="text-h4 font-weight-bold mb-1">
+          {{ dueToday }} {{ dueToday > 1 ? 'cartes' : 'carte' }}
+        </div>
+        <div class="text-body-2 mb-4" :class="{ 'text-medium-emphasis': dueToday === 0 }">
+          {{ dueToday > 0 ? 'à réviser pour rester à jour' : 'Tout est révisé, reviens demain !' }}
+        </div>
+        <v-btn
+          block
+          size="x-large"
+          :color="dueToday > 0 ? 'surface' : 'primary'"
+          :variant="dueToday > 0 ? 'flat' : 'tonal'"
+          :prepend-icon="mdiPlay"
+          :disabled="dueToday === 0"
+          to="/quiz"
+        >
+          Réviser maintenant
+        </v-btn>
+      </v-card>
+
+      <v-row dense class="mb-1">
+        <v-col cols="6">
+          <v-card variant="tonal" class="pa-4 h-100">
+            <v-icon :icon="mdiCardsOutline" size="20" class="mb-2 text-medium-emphasis" />
+            <div class="text-h5 font-weight-bold">{{ cards.length }}</div>
+            <div class="text-caption text-medium-emphasis">
+              {{ cards.length > 1 ? 'cartes au total' : 'carte au total' }}
+            </div>
+          </v-card>
+        </v-col>
+        <v-col cols="6">
+          <v-card variant="tonal" class="pa-4 h-100">
+            <v-icon :icon="mdiCheckDecagram" size="20" class="mb-2 text-success" />
+            <div class="text-h5 font-weight-bold">{{ masteredCards }}</div>
+            <div class="text-caption text-medium-emphasis">
+              {{ masteredCards > 1 ? 'cartes acquises' : 'carte acquise' }}
+            </div>
+          </v-card>
+        </v-col>
+      </v-row>
+
+      <v-card variant="tonal" class="pa-5 mb-3">
+        <div class="d-flex align-center justify-space-between mb-3">
+          <span class="text-subtitle-1 font-weight-medium">Progression du paquet</span>
+          <span class="text-h6 font-weight-bold">{{ progress }}%</span>
+        </div>
+        <v-progress-linear
+          :model-value="progress"
+          color="primary"
+          height="12"
+          rounded
+          aria-label="Progression du paquet"
+        />
+        <div class="text-caption text-medium-emphasis mt-2">
+          Une carte progresse de boîte en boîte à chaque bonne réponse.
+        </div>
+      </v-card>
+
+      <v-card v-if="lastSessionScore" variant="tonal" class="pa-5">
+        <div class="text-subtitle-1 font-weight-medium mb-1">Dernière révision</div>
+        <div class="text-body-2 text-medium-emphasis">
+          {{ lastSessionScore.correct }}/{{ lastSessionScore.total }} bonnes réponses
+          ({{ lastSessionScore.rate }}%) — {{ lastSessionScore.date }}
+        </div>
+      </v-card>
+
+      <v-card v-else-if="cards.length === 0" variant="tonal" class="pa-5 text-center">
+        <div class="text-subtitle-1 font-weight-medium mb-2">Aucune carte pour l'instant</div>
+        <div class="text-body-2 text-medium-emphasis mb-4">
+          Crée ta première carte pour lancer ta première révision.
+        </div>
+        <v-btn color="primary" variant="flat" block to="/card">Créer une carte</v-btn>
+      </v-card>
+    </template>
+  </div>
+</template>

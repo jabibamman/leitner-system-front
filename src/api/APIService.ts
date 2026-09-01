@@ -1,39 +1,66 @@
-import axios from 'axios';
-import type { Card, CardId, CardUserData } from './models/Card';
+import axios from 'axios'
+import type { Card, CardId, CardUserData } from './models/Card'
+import type { AnswerPayload } from './models/AnswerPayload'
+
+const rawBaseUrl = import.meta.env.VITE_APP_API_URL
+
+if (!rawBaseUrl) {
+  console.warn(
+    "[Leitner] VITE_APP_API_URL n'est pas défini : les appels API échoueront. " +
+      'Définis cette variable dans .env.local (dev) ou dans les variables du projet (Vercel).',
+  )
+}
+
+/** Supprime le "/" final pour éviter les URLs en "//cards". */
+export const API_BASE_URL = (rawBaseUrl ?? '').replace(/\/+$/, '')
 
 const apiClient = axios.create({
-  baseURL: import.meta.env.VITE_APP_API_URL,
+  baseURL: API_BASE_URL,
+  timeout: 15000,
   headers: {
     'Content-type': 'application/json',
   },
-});
+})
 
-interface AnswerPayload {
-  isValid: boolean;
+/** Message lisible pour l'utilisateur, à afficher tel quel dans l'UI. */
+export function toUserMessage(error: unknown): string {
+  if (axios.isAxiosError(error)) {
+    if (error.code === 'ECONNABORTED') {
+      return 'Le serveur met trop de temps à répondre. Réessaie dans un instant.'
+    }
+    if (!error.response) {
+      return 'Impossible de joindre le serveur. Vérifie ta connexion.'
+    }
+    if (error.response.status === 404) return 'Ressource introuvable.'
+    if (error.response.status >= 500) return 'Le serveur a rencontré une erreur. Réessaie plus tard.'
+    return 'La requête a été refusée par le serveur.'
+  }
+  return 'Une erreur inattendue est survenue.'
 }
 
 export const APIService = {
   getAllCards(tags?: string[]): Promise<Card[]> {
-    const queryParams: Record<string, string> = {};
+    const params: Record<string, string> = {}
+    const cleaned = tags?.map((tag) => tag.trim()).filter(Boolean) ?? []
 
-    if (tags && tags.length > 0) {
-      queryParams['tags'] = tags.join(',');
+    if (cleaned.length > 0) {
+      params.tags = cleaned.join(',')
     }
 
-    return apiClient.get('/cards', { params: queryParams }).then(res => res.data);
+    return apiClient.get<Card[]>('/cards', { params }).then((res) => res.data)
   },
 
   createCard(data: CardUserData): Promise<Card> {
-    return apiClient.post('/cards', data).then(res => res.data);
+    return apiClient.post<Card>('/cards', data).then((res) => res.data)
   },
 
   getCardsForQuizz(date?: string): Promise<Card[]> {
-    return apiClient.get('/cards/quizz', { params: { date } }).then(res => res.data);
+    return apiClient.get<Card[]>('/cards/quizz', { params: { date } }).then((res) => res.data)
   },
 
   answerCard(cardId: CardId, answer: AnswerPayload): Promise<void> {
-    return apiClient.patch(`/cards/${cardId}/answer`, answer).then(res => res.data);
+    return apiClient.patch(`/cards/${cardId}/answer`, answer).then((res) => res.data)
   },
-};
+}
 
-export default APIService;
+export default APIService
